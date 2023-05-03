@@ -1,0 +1,9 @@
+*.stories.js
+.github
+.storybook
+.idea
+config
+Dockerfile
+Dockerfiles
+lib
+storybook-static

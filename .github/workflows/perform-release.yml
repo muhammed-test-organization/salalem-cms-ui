@@ -1,0 +1,62 @@
+name: perform-release
+
+on:
+  workflow_dispatch:   # i.e. triggered manually
+    inputs:
+      release_type:
+        description: 'Type of release (major|minor|patch)'
+        required: true
+        default: 'patch'
+
+concurrency: single_release_at_a_time
+
+jobs:
+  perform-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          token: ${{ secrets.NPM_PUBLISH_TOKEN }}
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16.15.0'
+          cache: 'npm'
+      - name: Configure git user
+        run: |
+          git config --global user.name 'release[bot]'
+          git config --global user.email '${{ github.actor }}@users.noreply.github.com'
+      - name: Update version
+        id: update-version
+        run: |
+          npm version --no-commit-hooks ${{ github.event.inputs.release_type }}
+          git push --follow-tags
+          echo "::set-output name=NEW_VERSION_TAG::$(git describe)"
+      - name: Install dependencies
+        run: |
+          npm config set @salalem:registry=https://npm.pkg.github.com
+          npm config set -- //npm.pkg.github.com/:_authToken=${{ secrets.NPM_PUBLISH_TOKEN }}
+          npm install
+          npm ci
+      - name: Publish to NPM registry (Artifactory)
+        run: npm publish
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.update-version.outputs.NEW_VERSION_TAG }}
+          generate_release_notes: true
+      - name: Notify tms-web about UI kit release
+        uses: peter-evans/repository-dispatch@v1
+        with:
+          token: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          repository: salalem/tms-web
+          event-type: ui-kit-released
+      - name: Notify lxp-web about UI kit release
+        uses: peter-evans/repository-dispatch@v1
+        with:
+          token: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          repository: salalem/lxp-web
+          event-type: ui-kit-released
